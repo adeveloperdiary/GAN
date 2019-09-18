@@ -187,9 +187,40 @@ ae = AutoEncoder(input_dim=(28, 28, 1),
                  decoder_conv_t_strides=[1, 2, 2, 1],
                  z_dim=2)
 
-LEARNING_RATE = 0.0005
-BATCH_SIZE = 32
-INITIAL_EPOCH = 0
+MODE = 'TEST'
 
-ae.compile(lr=LEARNING_RATE)
-ae.train(x_train, batch_size=BATCH_SIZE, epochs=100, initial_epoch=INITIAL_EPOCH)
+if MODE == 'TRAIN':
+    LEARNING_RATE = 0.0005
+    BATCH_SIZE = 32
+    INITIAL_EPOCH = 0
+
+    ae.compile(lr=LEARNING_RATE)
+    ae.train(x_train, batch_size=BATCH_SIZE, epochs=100, initial_epoch=INITIAL_EPOCH)
+else:
+    ae.load_weights("output/weights/weights.h5")
+
+    n_to_show = 10
+    example_idx = np.random.choice(range(len(x_test)), n_to_show)
+    example_images = x_test[example_idx]
+
+    z_points = ae.encoder.predict(example_images)
+
+    reconst_images = ae.decoder.predict(z_points)
+
+    fig = plt.figure(figsize=(15, 3))
+    fig.subplots_adjust(hspace=0.4, wspace=0.4)
+
+    for i in range(n_to_show):
+        img = example_images[i].squeeze()
+        ax = fig.add_subplot(2, n_to_show, i + 1)
+        ax.axis('off')
+        ax.text(0.5, -0.35, str(np.round(z_points[i], 1)), fontsize=10, ha='center', transform=ax.transAxes)
+        ax.imshow(img, cmap='gray_r')
+
+    for i in range(n_to_show):
+        img = reconst_images[i].squeeze()
+        ax = fig.add_subplot(2, n_to_show, i + n_to_show + 1)
+        ax.axis('off')
+        ax.imshow(img, cmap='gray_r')
+
+    plt.savefig('myfig.png')
