@@ -1,6 +1,33 @@
 from keras.datasets import mnist
 import keras as k
 import numpy as np
+import os
+import matplotlib.pyplot as plt
+
+
+class MonitoringCallback(k.callbacks.Callback):
+    def __init__(self, initial_epoch, ae):
+        self.epoch = initial_epoch
+        self.ae = ae
+
+    def on_batch_end(self, batch, logs={}):
+        if batch % 60000 == 0:
+            # Sample values from standard normal.
+            z_new = np.random.normal(size=(1, self.ae.z_dim))
+
+            y_pred = self.ae.decoder.predict(np.array(z_new))
+
+            reconstruction = y_pred[0].squeeze()
+
+            file_path = os.path.join("output", 'images', 'img_' + str(self.epoch).zfill(3) + '_' + str(batch) + '.jpg')
+
+            if len(reconstruction.shape) == 2:
+                plt.imsave(file_path, reconstruction, cmap='gray_r')
+            else:
+                plt.imsave(file_path, reconstruction)
+
+    def on_epoch_begin(self, epoch, logs={}):
+        self.epoch += 1
 
 
 class AutoEncoder:
@@ -52,7 +79,6 @@ class AutoEncoder:
                 x = k.layers.Dropout(rate=0.25)(x)
 
         shape_before_flattening = k.backend.int_shape(x)[1:]
-        print(shape_before_flattening, k.backend.int_shape(x))
 
         x = k.layers.Flatten()(x)
 
@@ -101,6 +127,43 @@ class AutoEncoder:
         self.encoder.summary()
         self.decoder.summary()
 
+    def compile(self, lr):
+        self.lr = lr
+
+        optimizer = k.optimizers.Adam(lr=lr)
+
+        def r_loss(y_true, y_pred):
+            return k.backend.mean(k.backend.square(y_true - y_pred), axis=[1, 2, 3])
+
+        self.model.compile(optimizer=optimizer, loss=r_loss)
+
+    def _step_decay_schedule(self, initial_lr, decay_factor=0.5, step_size=1):
+        def schedule(epoch):
+            new_lr = initial_lr * (decay_factor ** np.floor(epoch / step_size))
+            return new_lr
+
+        return k.callbacks.LearningRateScheduler(schedule)
+
+    def train(self, x_train, batch_size, epochs, initial_epoch=0, lr_decay=1):
+
+        monitor = MonitoringCallback(initial_epoch, self)
+        lr_schedule = self._step_decay_schedule(self.lr, decay_factor=lr_decay)
+
+        checkpoint = k.callbacks.ModelCheckpoint(os.path.join("output", "weights/weights.h5"), save_weights_only=True, verbose=1)
+
+        callback_list = [checkpoint, monitor, lr_schedule]
+
+        self.model.fit(x_train,
+                       x_train,
+                       batch_size=batch_size,
+                       shuffle=True,
+                       epochs=epochs,
+                       initial_epoch=initial_epoch,
+                       callbacks=callback_list)
+
+    def load_weights(self, path):
+        self.model.load_weights(filepath=path)
+
 
 def load_mnist():
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
@@ -119,7 +182,14 @@ ae = AutoEncoder(input_dim=(28, 28, 1),
                  encoder_conv_filters=[32, 64, 64, 64],
                  encoder_conv_kernels=[3, 3, 3, 3],
                  encoder_conv_strides=[1, 2, 2, 1],
-                 decoder_conv_t_filters=[64, 64, 64, 32],
+                 decoder_conv_t_filters=[64, 64, 32, 1],
                  decoder_conv_t_kernels=[3, 3, 3, 3],
                  decoder_conv_t_strides=[1, 2, 2, 1],
                  z_dim=2)
+
+LEARNING_RATE = 0.0005
+BATCH_SIZE = 32
+INITIAL_EPOCH = 0
+
+ae.compile(lr=LEARNING_RATE)
+ae.train(x_train, batch_size=BATCH_SIZE, epochs=100, initial_epoch=INITIAL_EPOCH)
